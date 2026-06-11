@@ -13,7 +13,7 @@ from google.genai import types
 app = Flask(__name__)
 
 # Fallback to local SQLite database if cloud Postgres environment isn't specified
-app.config['SQLALCHEMY_DATABASE_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///users.db")
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///users.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
