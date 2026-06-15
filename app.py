@@ -292,6 +292,17 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(func=run_daily_newsletter_batch, trigger="interval", days=1)
 scheduler.start()
 
+# ==================== DIAGNOSTIC TEST TRIGGER ====================
+@app.route('/secret-test-trigger')
+def secret_test_trigger():
+    """Manually kicks off the newsletter compiler loop instantly for testing."""
+    try:
+        print("⚡ Manual test trigger pulled! Executing email batch processing...")
+        run_daily_newsletter_batch()
+        return jsonify({"status": "success", "message": "Batch processing completed! Check your email."}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 if __name__ == "__main__":
     # Standard fallback port mapping for clean Railway service binding
     port = int(os.environ.get("PORT", 5000))
