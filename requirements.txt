@@ -5,5 +5,4 @@ Flask==3.0.3
 Flask-SQLAlchemy==3.1.1
 APScheduler==3.10.4
 gunicorn==22.0.0
-psycopg2-binary==2.9.9
-psycopg2==2.9.9
+pg8000==1.31.2
