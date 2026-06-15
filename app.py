@@ -44,7 +44,7 @@ class UserProfile(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 with app.app_context():
-    db.drop_all()   # <-- ADD THIS LINE TEMPORARILY
+    # db.drop_all()   # <-- ADD THIS LINE TEMPORARILY
     db.create_all()
 
 # ==================== NEWS AND AI LOGIC ENGINE ====================
@@ -271,6 +271,41 @@ scheduler = BackgroundScheduler()
 # The cron trigger fires exactly at minute 0 of every hour
 scheduler.add_job(func=run_hourly_newsletter_batch, trigger="cron", minute=0)
 scheduler.start()
+
+# ==================== DIAGNOSTIC IMMEDIATE TEST TRIGGER ====================
+@app.route('/secret-test-trigger')
+def secret_test_trigger():
+    """Manually kicks off the newsletter compiler instantly for all registered users."""
+    try:
+        print("⚡ Manual test trigger pulled! Executing custom keyword batch processing...")
+        
+        with app.app_context():
+            users = UserProfile.query.all()
+            if not users:
+                return jsonify({"status": "error", "message": "No registered users found in the database. Please sign up on the homepage first."}), 400
+                
+            for user in users:
+                print(f"🛰️ Immediate Test Pipeline running for: {user.email} (Topic: {user.custom_subject})")
+                
+                # 1. Fetch news matching their custom typed query string
+                raw_feed_data = fetch_custom_news(user.custom_subject)
+                
+                # 2. Run Gemini curation filtering out the top 3 items
+                personalized_html = generate_personalized_html(user.email, user.custom_subject, raw_feed_data)
+                
+                # 3. Dispatch payload instantly via Resend
+                resend.Emails.send({
+                    "from": "NewsEngine <onboarding@resend.dev>", # Replace with custom verified domain when ready
+                    "to": [user.email],
+                    "subject": f"🔥 IMMEDIATE TEST: Top 3 Updates on '{user.custom_subject}'",
+                    "html": personalized_html
+                })
+                
+        return jsonify({"status": "success", "message": "Immediate custom test batch completed! Check your email."}), 200
+        
+    except Exception as e:
+        print(f"❌ Test Trigger Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
