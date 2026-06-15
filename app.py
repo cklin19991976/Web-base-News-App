@@ -16,16 +16,15 @@ app = Flask(__name__)
 db_url = os.environ.get("DATABASE_URL")
 
 if db_url:
-    # Auto-replace legacy postgres:// syntax with modern SQLAlchemy requirements
+    # 🛠️ FIXED: Convert legacys string formats to use pure-Python pg8000 driver engine mapping
     if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
+        db_url = db_url.replace("postgres://", "postgresql+pg8000://", 1)
+    elif db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
 else:
-    # 🛠️ HARDENED PROTECTION FIX: Check if running on Railway production vs local PC
     if os.environ.get("PORT"):
-        # If a web port exists but DATABASE_URL is missing, force a visible system log error
-        raise RuntimeError("CRITICAL ERROR: DATABASE_URL environment variable is missing on Railway! Please link your Postgres database plug-in to this web service.")
+        raise RuntimeError("CRITICAL ERROR: DATABASE_URL environment variable is missing on Railway!")
     else:
-        # Fall back to SQLite strictly when executing locally on your desktop machine
         db_url = "sqlite:///users.db"
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
