@@ -12,10 +12,25 @@ from google.genai import types
 # ==================== INITIALIZATION ====================
 app = Flask(__name__)
 
-# Fallback to local SQLite database if cloud Postgres environment isn't specified
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///users.db")
+# Fetch the raw database environment string injected by Railway
+db_url = os.environ.get("DATABASE_URL")
+
+if db_url:
+    # 🛠️ FIXED: Secure production routing for Railway cloud containers
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+else:
+    # 🛠️ FIXED: Fall back to local SQLite ONLY when running manually on your own PC
+    db_url = "sqlite:///users.db"
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+# Fallback to local SQLite database if cloud Postgres environment isn't specified
+# app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///users.db")
+# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# db = SQLAlchemy(app)
 
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "YOUR_NEWSAPI_ORG_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
