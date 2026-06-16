@@ -145,7 +145,7 @@ def run_hourly_newsletter_batch():
             
             try:
                 resend.Emails.send({
-                    "from": "NewsEngine <onboarding@resend.dev>", # Replace with custom verified domain when ready
+                    "from": "IntelBrief <briefing@newshighlights.online>", # Replace with custom verified domain when ready
                     "to": [user.email],
                     "subject": f"🌟 Strategic Intel: Top 3 Updates on '{user.custom_subject}'",
                     "html": personalized_html
@@ -295,7 +295,7 @@ def secret_test_trigger():
                 
                 # 3. Dispatch payload instantly via Resend
                 resend.Emails.send({
-                    "from": "NewsEngine <onboarding@resend.dev>", # Replace with custom verified domain when ready
+                    "from": "IntelBrief <briefing@newshighlights.online>", # Replace with custom verified domain when ready
                     "to": [user.email],
                     "subject": f"🔥 IMMEDIATE TEST: Top 3 Updates on '{user.custom_subject}'",
                     "html": personalized_html
