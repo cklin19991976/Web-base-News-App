@@ -112,13 +112,14 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
             )
             return response.text
         except Exception as e:
-            # Check if this exception is a 429 rate limit
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            error_str = str(e)
+            # 🛠️ FIXED: Catch 429 (Rate Limits) AND 503 (Server Overloaded / High Demand)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "503" in error_str or "UNAVAILABLE" in error_str:
                 calculated_delay = base_delay * (2 ** attempt) # Wait 3s, then 6s, then 12s...
-                print(f"⚠️ [Attempt {attempt + 1}/{max_retries}] Gemini rate wall detected for '{user_topic}'. Cooling down for {calculated_delay}s...")
+                print(f"⚠️ [Attempt {attempt + 1}/{max_retries}] Gemini traffic/demand wall detected ('{user_topic}'). Cooling down for {calculated_delay}s...")
                 time.sleep(calculated_delay)
             else:
-                # If it's a completely different error, fail immediately so we can read it
+                # If it's a completely different error (like an invalid API key), fail immediately
                 print(f"❌ Non-rate limit error hit: {e}")
                 return f"<p>Error compiling news layout data: {e}</p>"
                 
