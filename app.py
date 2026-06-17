@@ -43,19 +43,26 @@ with app.app_context():
 
 # ==================== NEWS AND AI LOGIC ENGINE ====================
 def fetch_custom_news(user_query):
-    """Fetches articles for a single explicit topic string."""
+    """Fetches articles for a single topic string, adapting language rules automatically."""
     url = "https://newsapi.org/v2/everything"
     date_yesterday = (datetime.utcnow() - timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    # 🛠️ THE FIX: Detect if the user typed Chinese characters
+    # If the string contains Chinese, we drop the "en" restriction so it finds local Taiwanese tech media.
+    contains_chinese = any('\u4e00' <= char <= '\u9fff' for char in user_query)
     
     params = {
         "q": user_query,         
         "sortBy": "relevancy",  
         "from": date_yesterday,
-        "language": "en",
-        "pageSize": 5,          # 🛠️ TOKEN OPTIMIZATION: Reduced from 15 to 5. 
-                                # This strips out thousands of redundant tokens while retaining top stories.
+        "pageSize": 8,          # Slightly increased to give Gemini a better pool
         "apiKey": NEWS_API_KEY
     }
+    
+    # Only enforce English if the query string is pure English text
+    if not contains_chinese:
+        params["language"] = "en"
+        
     try:
         response = requests.get(url, params=params)
         response.raise_for_status()
