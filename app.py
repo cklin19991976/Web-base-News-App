@@ -168,7 +168,7 @@ def run_hourly_newsletter_batch():
             
             try:
                 resend.Emails.send({
-                    "from": "Matrix Briefing <briefing@yourdomain.com>", # Make sure this matches your verified domain!
+                    "from": "IntelBrief <briefing@newshighlights.online>", # Make sure this matches your verified domain!
                     "to": [user.email],
                     "subject": f"🌟 Strategic Briefing Matrix: {len(topics)} Tracked Subjects",
                     "html": final_email_html
@@ -302,7 +302,7 @@ def secret_test_trigger():
                 final_email_html = compile_master_email_body(user.email, topics)
                 
                 resend.Emails.send({
-                    "from": "Matrix Briefing <briefing@yourdomain.com>", # Adjust to your custom domain!
+                    "from": "IntelBrief <briefing@newshighlights.online>", # Adjust to your custom domain!
                     "to": [user.email],
                     "subject": f"🔥 MULTI-SECTION TEST: {len(topics)} Subjects Isolated",
                     "html": final_email_html
