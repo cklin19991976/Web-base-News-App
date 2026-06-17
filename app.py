@@ -116,6 +116,10 @@ def compile_master_email_body(user_email, topics_list):
         raw_news = fetch_custom_news(topic)
         # 2. Get Gemini to generate exactly 3 custom-tailored bulletins for this keyword
         sections_html += generate_single_subject_section_html(topic, raw_news)
+        # 🛠️ THE FIX: Force the script to pause for 1.5 seconds after every Gemini call.
+        # This prevents hitting the 429 RESOURCE_EXHAUSTED rate wall.
+        print("⏳ Sleeping for 1.5 seconds to respect Gemini API rate boundaries...")
+        time.sleep(1.5)
         
     # Wrapper template to stitch all individual subject cards together cleanly
     master_wrapper = f"""
