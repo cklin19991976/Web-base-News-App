@@ -106,7 +106,7 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0))
             )
