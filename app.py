@@ -8,6 +8,7 @@ from flask_sqlalchemy import SQLAlchemy
 from apscheduler.schedulers.background import BackgroundScheduler
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError  # 🛠️ IMPORT THE API ERROR EXCEPTION LAYER
 
 # ==================== INITIALIZATION ====================
 app = Flask(__name__)
@@ -33,7 +34,7 @@ resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    custom_subject = db.Column(db.String(300), nullable=False) # Supports comma separated values
+    custom_subject = db.Column(db.String(300), nullable=False) 
     delivery_hour = db.Column(db.Integer, nullable=False, default=8) 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -51,7 +52,8 @@ def fetch_custom_news(user_query):
         "sortBy": "relevancy",  
         "from": date_yesterday,
         "language": "en",
-        "pageSize": 15,          
+        "pageSize": 5,          # 🛠️ TOKEN OPTIMIZATION: Reduced from 15 to 5. 
+                                # This strips out thousands of redundant tokens while retaining top stories.
         "apiKey": NEWS_API_KEY
     }
     try:
@@ -75,36 +77,53 @@ def fetch_custom_news(user_query):
         return f"Error gathering data: {e}"
 
 def generate_single_subject_section_html(user_topic, raw_news_payload):
-    """Asks Gemini to compile EXACTLY the top 3 stories for ONE specific subject block."""
+    """Asks Gemini to compile news stories, utilizing an exponential backoff wrapper for 429 safety."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
     You are an elite corporate intelligence analyst. Analyze the raw recent data feed provided below.
-    Your absolute mandate is to isolate EXACTLY the top 3 most important, high-impact news stories from the last 24 hours regarding this specific topic: "{user_topic}". Do not return more than 3, and do not return fewer than 3 unless there is no data.
+    Your absolute mandate is to isolate EXACTLY the top 3 most important, high-impact news stories from the last 24 hours regarding this specific topic: "{user_topic}". 
 
-    Generate a clean HTML fragment with NO outer body or html tags. Use this structural layout pattern:
+    Generate a clean HTML fragment with NO outer body or html tags:
     <div style="margin-bottom: 35px; background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
         <h3 style="margin:0 0 15px 0; font-size:16px; color:#1e40af; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #eff6ff; padding-bottom: 5px;">
             📊 Monitoring Target: {user_topic}
         </h3>
         <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-            [Format your chosen top 3 stories explicitly as `<li>` elements. For each story, provide a bold headline, a 2-sentence crisp operational impact description, and a clean hyperlinked anchor tag pointing to the original source URL. If the topic involves Taiwan or East Asian tech/finance markets, write the text for these bullet points in Traditional Chinese (繁體中文). Otherwise, write in English.]
+            [Format your chosen top 3 stories explicitly as <li> elements. For each story, provide a bold headline, a 2-sentence operational description, and a clean hyperlinked anchor tag link using the source URL. If the topic involves Taiwan or East Asian tech/finance markets, write the text for these bullet points in Traditional Chinese (繁體中文). Otherwise, write in English.]
         </ul>
     </div>
 
-    Omit all markdown fence rules (like ```html). Output only the raw inner HTML block code string.
+    Omit all markdown fence rules (like ```html). Output only raw inner HTML block code string.
     Raw Data Pool Feed for "{user_topic}":
     {raw_news_payload}
     """
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
-            contents=prompt,
-            config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0))
-        )
-        return response.text
-    except Exception as e:
-        return f"<p>Error constructing news layout for {user_topic}: {e}</p>"
+    
+    # 🛠️ THE PRODUCTION RESILIENCE GATE: Intelligent Retry Loop
+    max_retries = 4
+    base_delay = 3.0 # Start with a 3 second sleep if throttled
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash-lite',
+                contents=prompt,
+                config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0))
+            )
+            return response.text
+        except Exception as e:
+            # Check if this exception is a 429 rate limit
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                calculated_delay = base_delay * (2 ** attempt) # Wait 3s, then 6s, then 12s...
+                print(f"⚠️ [Attempt {attempt + 1}/{max_retries}] Gemini rate wall detected for '{user_topic}'. Cooling down for {calculated_delay}s...")
+                time.sleep(calculated_delay)
+            else:
+                # If it's a completely different error, fail immediately so we can read it
+                print(f"❌ Non-rate limit error hit: {e}")
+                return f"<p>Error compiling news layout data: {e}</p>"
+                
+    # If all retries failed
+    return f"<p>System skipped execution segment for '{user_topic}' due to high API demand congestion. Please retry shortly.</p>"
 
 def compile_master_email_body(user_email, topics_list):
     """Loops through every topic independently to guarantee a 3-news breakdown per subject."""
@@ -112,16 +131,12 @@ def compile_master_email_body(user_email, topics_list):
     
     for topic in topics_list:
         print(f"🔄 Processing independent micro-pipeline for subject element: {topic}")
-        # 1. Fetch data explicitly for this one keyword
         raw_news = fetch_custom_news(topic)
-        # 2. Get Gemini to generate exactly 3 custom-tailored bulletins for this keyword
         sections_html += generate_single_subject_section_html(topic, raw_news)
-        # 🛠️ THE FIX: Force the script to pause for 1.5 seconds after every Gemini call.
-        # This prevents hitting the 429 RESOURCE_EXHAUSTED rate wall.
-        print("⏳ Sleeping for 1.5 seconds to respect Gemini API rate boundaries...")
-        time.sleep(1.5)
         
-    # Wrapper template to stitch all individual subject cards together cleanly
+        # Keep an underlying rhythm safety spacing
+        time.sleep(1.0)
+        
     master_wrapper = f"""
     <div style="background-color:#f8fafc; padding:30px 15px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; max-width:650px; margin:0 auto; border-radius:12px;">
         <div style="border-bottom:2px solid #e2e8f0; padding-bottom:15px; margin-bottom:25px;">
@@ -147,15 +162,12 @@ def run_hourly_newsletter_batch():
         users = UserProfile.query.filter_by(delivery_hour=current_utc_hour).all()
         
         for user in users:
-            # Parse out comma-separated values into a clean iterable string list
             topics = [t.strip() for t in user.custom_subject.split(",") if t.strip()]
-            print(f"🛰️ Building multi-subject layout for {user.email}. Processing array: {topics}")
-            
             final_email_html = compile_master_email_body(user.email, topics)
             
             try:
                 resend.Emails.send({
-                    "from": "IntelBrief <briefing@newshighlights.online>", 
+                    "from": "Matrix Briefing <briefing@yourdomain.com>", # Make sure this matches your verified domain!
                     "to": [user.email],
                     "subject": f"🌟 Strategic Briefing Matrix: {len(topics)} Tracked Subjects",
                     "html": final_email_html
@@ -289,7 +301,7 @@ def secret_test_trigger():
                 final_email_html = compile_master_email_body(user.email, topics)
                 
                 resend.Emails.send({
-                    "from": "IntelBrief <briefing@newshighlights.online>", 
+                    "from": "Matrix Briefing <briefing@yourdomain.com>", # Adjust to your custom domain!
                     "to": [user.email],
                     "subject": f"🔥 MULTI-SECTION TEST: {len(topics)} Subjects Isolated",
                     "html": final_email_html
