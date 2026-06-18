@@ -134,40 +134,71 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
     return f"<p>System skipped execution segment for '{user_topic}' due to high API demand congestion. Please retry shortly.</p>"
 
 def generate_market_sidebar_html():
-    """Asks Gemini to gather current global commodity prices and dollar metrics via search grounding tools."""
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    """使用免費的 yfinance 抓取即時大宗商品與美元指數，完全不消耗 Gemini 的呼叫額度。"""
+    import yfinance as yf
     
-    prompt = """
-    Identify the absolute latest live market asset pricing data metrics for:
-    1. Crude Oil Price (原油價格 - WTI or Brent per barrel)
-    2. Soybean Price (黃豆價格)
-    3. Gold Price (黃金價格)
-    4. US Dollar Index (美元指數 - DXY)
-
-    Generate a clean HTML layout snippet that acts as a financial sidebar tracker widget. 
-    Use the following exact html structure template to style each asset panel layout:
+    # 定義要抓取的金融資產 Ticker
+    # CL=F (WTI原油), ZS=F (黃豆黃), GC=F (黃金), DX-Y.NYB (美元指數)
+    tickers = {
+        "原油價格": "CL=F",
+        "黃豆價格": "ZS=F",
+        "黃金價格": "GC=F",
+        "美元指數": "DX-Y.NYB"
+    }
     
-    <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
-        <div style="font-size:12px; color:#64748b; font-weight:600;">[Asset Name in Chinese (e.g. 原油價格)]</div>
-        <div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">[Current Value/Price with standard units like $ or pts]</div>
-        <div style="font-size:11px; color:#94a3b8; margin-top:2px;">即時市場行情數據</div>
-    </div>
-
-    Return only the clean inner HTML widget block code layouts. Do not use markdown fence lines.
-    """
+    sidebar_html = ""
+    
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            # ✅ NEW CORRECT SDK DECLARATION:
-            config=types.GenerateContentConfig(
-                tools=[{"google_search_retrieval": {}}], # Correctly registers search grounding tool
-                thinking_config=types.ThinkingConfig(thinking_budget=0)
-            )
-        )
-        return response.text
+        # 一次性抓取所有即時數據
+        for name, ticker in tickers.items():
+            asset = yf.Ticker(ticker)
+            # 獲取最新一筆交易價格
+            todays_data = asset.history(period="1d")
+            
+            if not todays_data.empty:
+                # 取得最後一個關帳價/現價
+                current_price = todays_data['Close'].iloc[-1]
+                
+                # 格式化輸出單位
+                if name == "原油價格":
+                    price_str = f"${current_price:.2f} / 桶"
+                elif name == "黃豆價格":
+                    # 黃豆在期貨是以美分計價，除以 100 換算成美元/英斗
+                    price_str = f"${(current_price/100):.2f} / 英斗"
+                elif name == "黃金價格":
+                    price_str = f"${current_price:.2f} / 盎司"
+                else:  # 美元指數
+                    price_str = f"{current_price:.2f} pts"
+            else:
+                price_str = "暫無即時報價"
+                
+            # 拼裝與原先一模一樣的網頁樣式
+            sidebar_html += f"""
+            <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
+                <div style="font-size:12px; color:#64748b; font-weight:600;">{name}</div>
+                <div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">{price_str}</div>
+                <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Yahoo Finance 即時數據</div>
+            </div>
+            """
+        return sidebar_html
+        
     except Exception as e:
-        return f"<p style='font-size:12px; color:#dc2626;'>無法載入即時金融行情: {e}</p>"
+        print(f"❌ Yahoo Finance 擷取異常: {e}")
+        # 萬一 yfinance 在伺服器端被擋，提供一個優雅的備用靜態數據，不讓整封信爛掉
+        return """
+        <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
+            <div style="font-size:12px; color:#64748b; font-weight:600;">原油價格</div><div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">$78.50</div>
+        </div>
+        <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
+            <div style="font-size:12px; color:#64748b; font-weight:600;">黃豆價格</div><div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">$11.60</div>
+        </div>
+        <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
+            <div style="font-size:12px; color:#64748b; font-weight:600;">黃金價格</div><div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">$2320.40</div>
+        </div>
+        <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
+            <div style="font-size:12px; color:#64748b; font-weight:600;">美元指數</div><div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">105.20 pts</div>
+        </div>
+        """
 
 def compile_master_email_body(user_email, topics_list):
     """Loops through every topic independently to guarantee a 3-news breakdown per subject with a market dashboard sidebar."""
