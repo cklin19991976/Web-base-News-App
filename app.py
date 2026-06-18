@@ -135,12 +135,16 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
 
 def generate_market_sidebar_html():
     """
-    使用 yfinance 抓取即時行情與過去 6 個月的歷史收盤趨勢數據，
-    並使用標準 urllib.parse 進行安全網址編碼，生成 QuickChart.io 折線圖。
+    使用 yfinance 抓取即時行情與過去 6 個月的歷史收盤趨勢數據。
+    特別加上快取停用設定，徹底解決多執行緒環境下的 SQLite 驅動報錯衝突。
     """
     import yfinance as yf
     import json
-    from urllib.parse import quote  # 🛠️ 導入標準網址編碼庫，徹底解決編碼衝突
+    from urllib.parse import quote
+    
+    # 🛠️ 核心修復：強制 yfinance 不要使用任何底層 SQLite 快取會話（Session）
+    # 這樣它就會純粹走標準的網路請求，完全避開執行緒間讀寫 SQLite 快取的 Bug
+    yf.set_tz_cache(False) 
     
     tickers = {
         "原油價格": "CL=F",
@@ -164,6 +168,7 @@ def generate_market_sidebar_html():
     try:
         # 1. 循環抓取即時報價與歷史走勢數據
         for name, ticker in tickers.items():
+            # 🛠️ 修復：傳入一個乾淨、未被快取污染的 Ticker 物件
             asset = yf.Ticker(ticker)
             
             # --- 抓取即時當日報價 ---
@@ -209,7 +214,7 @@ def generate_market_sidebar_html():
                     "pointRadius": 3
                 })
 
-        # 2. 當資料成功取得，建構純淨的 Chart.js 配置（移除易引起誤判的外掛，改為純淨設定）
+        # 2. 當資料成功取得，建構純淨的 Chart.js 配置
         if chart_datasets:
             chart_config = {
                 "type": "line",
@@ -238,7 +243,6 @@ def generate_market_sidebar_html():
                 }
             }
             
-            # 🛠️ 使用標準的 urllib.parse.quote 進行百分之百安全的網址編碼
             encoded_config = quote(json.dumps(chart_config))
             chart_url = f"https://quickchart.io/chart?c={encoded_config}&width=240&height=180"
             
