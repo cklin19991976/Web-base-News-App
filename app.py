@@ -83,32 +83,63 @@ def fetch_custom_news(user_query):
     except Exception as e:
         return f"Error gathering data: {e}"
 
-def generate_single_subject_section_html(user_topic, raw_news_payload):
-    """Asks Gemini to compile news stories, utilizing an exponential backoff wrapper for 429 safety."""
+def compile_master_email_body(user_email, topics_list):
+    """
+    【全新合併優化版】
+    一次性搜集所有主題的原始新聞，並僅呼叫 1 次 Gemini 進行整體編譯。
+    徹底解決因連續呼叫導致的 429 流量限制與 503 伺服器擁堵跳過問題！
+    """
     client = genai.Client(api_key=GEMINI_API_KEY)
     
+    # 1. 一次性打包搜集所有主題的 NewsAPI 原始資料
+    combined_raw_payload = ""
+    for topic in topics_list:
+        print(f"🔄 正在收集新聞原始資料：{topic}")
+        raw_news = fetch_custom_news(topic)
+        combined_raw_payload += f"=== 主題: {topic} ===\n{raw_news}\n\n"
+        time.sleep(0.5) # 輕量延遲保護 NewsAPI
+        
+    print("📈 正在向 Gemini 發送多主題合併編譯請求...")
+    
+    # 2. 構造一個強大的單一 Prompt，讓 Gemini 一次產出所有區塊
+    topics_string = "、".join(topics_list)
+    # 🛠️ 升級版 Prompt：強制 Gemini 嚴格進行主題隔離，確保每個主題的精確度與 3 則獨立新聞
     prompt = f"""
-    You are an elite corporate intelligence analyst. Analyze the raw recent data feed provided below.
-    Your absolute mandate is to isolate EXACTLY the top 3 most important, high-impact news stories from the last 24 hours regarding this specific topic: "{user_topic}". 
+    You are an elite corporate intelligence analyst operating under strict structural guidelines.
+    Your absolute mandate is to analyze the raw data pool feed provided below and extract EXACTLY top 3 high-impact news stories for EACH of the requested topics: {topics_string}.
 
-    Generate a clean HTML fragment with NO outer body or html tags:
+    You must treat each topic as a completely isolated assignment. Do not let topics bleed into each other, do not summarize them together, and do not shorten topic B just because topic A was long. Each topic MUST receive a fully filled out structural template.
+
+    Generate the final output as a sequential stack of clean HTML fragments (one <div> box for each topic) with NO outer <body> or <html> tags. 
+    Use this exact HTML structure for EACH individual topic section without deviation:
+    
     <div style="margin-bottom: 25px; background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
         <h3 style="margin:0 0 12px 0; font-size:15px; color:#1e40af; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #eff6ff; padding-bottom: 5px;">
-            📊 Monitoring Target: {user_topic}
+            📊 Monitoring Target: [Exact Topic Name]
         </h3>
         <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-            [Format your chosen top 3 stories explicitly as <li> elements. For each story, provide a bold headline, a 2-sentence operational description, and a clean hyperlinked anchor tag link using the source URL. If the topic involves Taiwan or East Asian tech/finance markets, write the text for these bullet points in Traditional Chinese (繁體中文). Otherwise, write in English.]
+            <li><b>[Headline Story 1]</b>: [Provide a comprehensive, highly precise 2-sentence operational description of this news event.] <a href="[Source URL]">Link</a></li>
+            <li><b>[Headline Story 2]</b>: [Provide a comprehensive, highly precise 2-sentence operational description of this news event.] <a href="[Source URL]">Link</a></li>
+            <li><b>[Headline Story 3]</b>: [Provide a comprehensive, highly precise 2-sentence operational description of this news event.] <a href="[Source URL]">Link</a></li>
         </ul>
     </div>
 
-    Omit all markdown fence rules (like ```html). Output only raw inner HTML block code string.
-    Raw Data Pool Feed for "{user_topic}":
-    {raw_news_payload}
-    """
+    CRITICAL LANGUAGE AND PRECISION RULES:
+    1. Every single topic listed must have EXACTLY 3 bullet points. No more, no less.
+    2. If the topic name or content involves Taiwan or East Asian tech/finance markets (such as 台積電, 聯發科), you MUST write the headlines and operational descriptions for that specific topic in professional Traditional Chinese (繁體中文).
+    3. For western or non-Asian global topics, write strictly in English.
+    4. Keep the precision level elite. Use exact numbers, financial metrics, and corporate data where available from the raw feed. Do not generalize.
+
+    Omit all markdown fence rules (like ```html). Output only the raw inner HTML block code strings stacked sequentially.
     
-    # 🛠️ THE PRODUCTION RESILIENCE GATE: Intelligent Retry Loop
-    max_retries = 5
-    base_delay = 5.0 # Start with a 5 second sleep if throttled
+    Raw Combined Data Pool Feed:
+    {combined_raw_payload}
+    """
+
+    # 3. 執行帶有智能重試的單次 Gemini 呼叫
+    sections_html = ""
+    max_retries = 4
+    base_delay = 5.0
     
     for attempt in range(max_retries):
         try:
@@ -117,21 +148,63 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
                 contents=prompt,
                 config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0))
             )
-            return response.text
+            sections_html = response.text
+            break
         except Exception as e:
             error_str = str(e)
-            # 🛠️ FIXED: Catch 429 (Rate Limits) AND 503 (Server Overloaded / High Demand)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "503" in error_str or "UNAVAILABLE" in error_str:
-                calculated_delay = base_delay * (2 ** attempt) # Wait 3s, then 6s, then 12s...
-                print(f"⚠️ [Attempt {attempt + 1}/{max_retries}] Gemini traffic/demand wall detected ('{user_topic}'). Cooling down for {calculated_delay}s...")
+            if any(err in error_str for err in ["429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE"]):
+                calculated_delay = base_delay * (2 ** attempt)
+                print(f"⚠️ 遇到 Gemini 流量管制，冷卻重試中... 等待 {calculated_delay} 秒...")
                 time.sleep(calculated_delay)
             else:
-                # If it's a completely different error (like an invalid API key), fail immediately
-                print(f"❌ Non-rate limit error hit: {e}")
-                return f"<p>Error compiling news layout data: {e}</p>"
-                
-    # If all retries failed
-    return f"<p>System skipped execution segment for '{user_topic}' due to high API demand congestion. Please retry shortly.</p>"
+                sections_html = f"<p style='color:red;'>AI 編譯新聞時發生錯誤: {e}</p>"
+                break
+    else:
+        sections_html = "<p style='color:red;'>由於 Google API 流量極度擁擠，本次新聞編譯未能完成，請稍後再次嘗試。</p>"
+
+    # 4. 抓取頂部金融即時行情（這一步目前是我們優化過的原生 Requests 請求，極速且不佔 AI 額度）
+    print("📈 正在抓取頂部全球大宗商品行情...")
+    market_data_cards = generate_market_sidebar_html()
+        
+    # 5. 組裝成行動裝置優先（Mobile-First）排版
+    master_wrapper = f"""
+    <div style="background-color:#f1f5f9; padding:15px 5px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b;">
+        <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background-color:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; border-collapse:collapse;">
+            
+            <tr>
+                <td style="padding:20px 15px; border-bottom:1px solid #f1f5f9; background:#ffffff;">
+                    <h1 style="margin:0; font-size:20px; color:#0f172a; font-weight:800;">🌟 每日新聞簡報</h1>
+                    <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">客戶：{user_email}</p>
+                </td>
+            </tr>
+            
+            <tr>
+                <td style="padding:15px; background-color:#f8fafc; border-bottom:1px solid #e2e8f0;">
+                    <h4 style="margin:0 0 10px 0; font-size:12px; color:#475569; text-transform:uppercase; letter-spacing:0.05em; border-bottom:2px solid #cbd5e1; padding-bottom:3px;">
+                        📈 全球市場即時行情（最新報價）
+                    </h4>
+                    <div>
+                        {market_data_cards}
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td style="padding:20px 15px;">
+                    {sections_html}
+                </td>
+            </tr>
+            
+            <tr>
+                <td style="text-align: center; padding: 15px; font-size: 11px; color: #94a3b8; background-color:#f8fafc; border-top:1px solid #e2e8f0;">
+                    Automated intelligence network node engine. To modify your subjects, re-submit the core web configuration portal form.
+                </td>
+            </tr>
+            
+        </table>
+    </div>
+    """
+    return master_wrapper
 
 def generate_market_sidebar_html():
     """
@@ -204,64 +277,6 @@ def generate_market_sidebar_html():
     except Exception as e:
         print(f"❌ 行情數據獲取失敗: {e}")
         return sidebar_html
-
-def compile_master_email_body(user_email, topics_list):
-    """
-    修改為行動裝置優先（Mobile-First）排版：
-    將全球商品即時數據上移至信件最頂端，並使用流動字卡設計；下方接著 100% 滿版的新聞追蹤。
-    """
-    sections_html = ""
-    
-    # 1. 依序編譯每個主題的新聞區塊
-    for topic in topics_list:
-        print(f"🔄 Processing independent micro-pipeline for subject element: {topic}")
-        raw_news = fetch_custom_news(topic)
-        sections_html += generate_single_subject_section_html(topic, raw_news)
-        time.sleep(2.5)
-        
-    print("📈 Fetching global macro commodities tracking telemetry matrix...")
-    # 這裡會拿到我們用 requests 抓取好的 4 個純文字數據字卡
-    market_data_cards = generate_market_sidebar_html()
-        
-    # 2. 封裝成 Mobile 優先的上下直整合型 HTML 樣式
-    master_wrapper = f"""
-    <div style="background-color:#f1f5f9; padding:15px 5px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b;">
-        <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background-color:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; border-collapse:collapse;">
-            
-            <tr>
-                <td style="padding:20px 15px; border-bottom:1px solid #f1f5f9; background:#ffffff;">
-                    <h1 style="margin:0; font-size:20px; color:#0f172a; font-weight:800;">🌟 每日新聞簡報</h1>
-                    <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">客戶：{user_email}</p>
-                </td>
-            </tr>
-            
-            <tr>
-                <td style="padding:15px; background-color:#f8fafc; border-bottom:1px solid #e2e8f0;">
-                    <h4 style="margin:0 0 10px 0; font-size:12px; color:#475569; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid #cbd5e1; padding-bottom:3px;">
-                        📈 全球市場即時行情（最新報價）
-                    </h4>
-                    <div>
-                        {market_data_cards}
-                    </div>
-                </td>
-            </tr>
-            
-            <tr>
-                <td style="padding:20px 15px;">
-                    {sections_html}
-                </td>
-            </tr>
-            
-            <tr>
-                <td style="text-align: center; padding: 15px; font-size: 11px; color: #94a3b8; background-color:#f8fafc; border-top:1px solid #e2e8f0;">
-                    Automated intelligence network node engine. To modify your subjects, re-submit the core web configuration portal form.
-                </td>
-            </tr>
-            
-        </table>
-    </div>
-    """
-    return master_wrapper
 
 # ==================== HOURLY BATCH COMPILER ====================
 def run_hourly_newsletter_batch():
