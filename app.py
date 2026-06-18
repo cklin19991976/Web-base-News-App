@@ -113,7 +113,7 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash-8b',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0))
             )
@@ -217,7 +217,7 @@ def compile_master_email_body(user_email, topics_list):
         print(f"🔄 Processing independent micro-pipeline for subject element: {topic}")
         raw_news = fetch_custom_news(topic)
         sections_html += generate_single_subject_section_html(topic, raw_news)
-        time.sleep(1.0)
+        time.sleep(2.5)
         
     print("📈 Fetching global macro commodities tracking telemetry matrix...")
     # 這裡會拿到我們用 requests 抓取好的 4 個純文字數據字卡
