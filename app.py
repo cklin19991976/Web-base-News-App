@@ -107,8 +107,8 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
     """
     
     # 🛠️ THE PRODUCTION RESILIENCE GATE: Intelligent Retry Loop
-    max_retries = 4
-    base_delay = 3.0 # Start with a 3 second sleep if throttled
+    max_retries = 5
+    base_delay = 5.0 # Start with a 5 second sleep if throttled
     
     for attempt in range(max_retries):
         try:
@@ -190,12 +190,12 @@ def generate_market_sidebar_html():
             else:
                 price_str = "連線失敗"
                 
-            # 拼接乾淨的純文字行情面板
+            # 拼接乾淨的頂部行情面板（移除過寬的限制，使其在手機容器中完美自適應）
             sidebar_html += f"""
-            <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
-                <div style="font-size:12px; color:#64748b; font-weight:600;">{name}</div>
-                <div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">{price_str}</div>
-                <div style="font-size:11px; color:#94a3b8; margin-top:2px;">市場即時數據</div>
+            <div style="background:#ffffff; padding:10px 12px; margin-bottom:8px; border-radius:6px; border:1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                <span style="font-size:12px; color:#64748b; font-weight:600; display:inline-block; width:70px;">{name}：</span>
+                <span style="font-size:15px; color:#0f172a; font-weight:700;">{price_str}</span>
+                <span style="font-size:10px; color:#94a3b8; float:right; margin-top:2px;">即時數據</span>
             </div>
             """
             
@@ -206,48 +206,58 @@ def generate_market_sidebar_html():
         return sidebar_html
 
 def compile_master_email_body(user_email, topics_list):
-    """Loops through every topic independently to guarantee a 3-news breakdown per subject with a market dashboard sidebar."""
+    """
+    修改為行動裝置優先（Mobile-First）排版：
+    將全球商品即時數據上移至信件最頂端，並使用流動字卡設計；下方接著 100% 滿版的新聞追蹤。
+    """
     sections_html = ""
     
+    # 1. 依序編譯每個主題的新聞區塊
     for topic in topics_list:
         print(f"🔄 Processing independent micro-pipeline for subject element: {topic}")
         raw_news = fetch_custom_news(topic)
         sections_html += generate_single_subject_section_html(topic, raw_news)
-        
-        # Keep an underlying rhythm safety spacing
         time.sleep(1.0)
         
     print("📈 Fetching global macro commodities tracking telemetry matrix...")
-    market_sidebar_html = generate_market_sidebar_html()
+    # 這裡會拿到我們用 requests 抓取好的 4 個純文字數據字卡
+    market_data_cards = generate_market_sidebar_html()
         
+    # 2. 封裝成 Mobile 優先的上下直整合型 HTML 樣式
     master_wrapper = f"""
-    <div style="background-color:#f1f5f9; padding:25px 10px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b;">
-        <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:750px; background-color:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; border-collapse:collapse;">
+    <div style="background-color:#f1f5f9; padding:15px 5px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b;">
+        <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background-color:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; border-collapse:collapse;">
+            
             <tr>
-                <td colspan="2" style="padding:25px 20px; border-bottom:2px solid #f1f5f9; background:#ffffff;">
-                    <h1 style="margin:0; font-size:22px; color:#0f172a; font-weight:800;">🌟 Your Multi-Subject Matrix Briefing</h1>
-                    <p style="margin:5px 0 0 0; font-size:13px; color:#64748b;">Custom tailored streams for: {user_email}</p>
+                <td style="padding:20px 15px; border-bottom:1px solid #f1f5f9; background:#ffffff;">
+                    <h1 style="margin:0; font-size:20px; color:#0f172a; font-weight:800;">🌟 每日新聞簡報</h1>
+                    <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">每日新聞簡報：{user_email}</p>
                 </td>
             </tr>
-            <tr valign="top">
-                <!-- LEFT COLUMN: NEWS TRACKING PANELS (65% WIDTH) -->
-                <td width="65%" style="padding:20px 15px 20px 20px;">
+            
+            <tr>
+                <td style="padding:15px; background-color:#f8fafc; border-bottom:1px solid #e2e8f0;">
+                    <h4 style="margin:0 0 10px 0; font-size:12px; color:#475569; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid #cbd5e1; padding-bottom:3px;">
+                        📈 全球市場即時行情（最新報價）
+                    </h4>
+                    <div>
+                        {market_data_cards}
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td style="padding:20px 15px;">
                     {sections_html}
                 </td>
-                
-                <!-- RIGHT COLUMN: COMMODITIES SIDEBAR WIDGET (35% WIDTH) -->
-                <td width="35%" style="padding:20px 20px 20px 15px; background-color:#f8fafc; border-left:1px solid #e2e8f0;">
-                    <h4 style="margin:0 0 15px 0; font-size:13px; color:#475569; text-transform:uppercase; letter-spacing:0.05em; border-bottom:2px solid #cbd5e1; padding-bottom:5px;">
-                        📈 全球商品與金融數據
-                    </h4>
-                    {market_sidebar_html}
-                </td>
             </tr>
+            
             <tr>
-                <td colspan="2" style="text-align: center; padding: 20px; font-size: 11px; color: #94a3b8; background-color:#f8fafc; border-top:1px solid #e2e8f0;">
+                <td style="text-align: center; padding: 15px; font-size: 11px; color: #94a3b8; background-color:#f8fafc; border-top:1px solid #e2e8f0;">
                     Automated intelligence network node engine. To modify your subjects, re-submit the core web configuration portal form.
                 </td>
             </tr>
+            
         </table>
     </div>
     """
