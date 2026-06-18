@@ -206,29 +206,29 @@ HTML_PAGE_TEMPLATE = """
 <body>
     <div class="card">
         <h2>🛰️ 每日新聞搜尋引擎</h2>
-        <p style="color: #64748b; font-size: 13px; margin-top:-10px;">請輸入多個您感興趣的新聞專題（以逗號隔開），系統將針對每個主題每日精選 3 則關鍵動態發送至您的信箱。</p>
+        <p style="color: #64748b; font-size: 13px; margin-top:-10px;">請輸入多個您感興趣的新聞主題（以逗號隔開），系統每日將針對每個主題利用人工智慧選出3條最重要的新聞,發送至您的信箱。</p>
         
         <form id="configForm">
             <label for="email">您的電子郵件地址：</label>
             <input type="email" id="email" required placeholder="example@gmail.com">
             
-            <label for="custom_subject">欲追蹤的新聞主題（多主題請用逗號隔開）：</label>
-            <input type="text" id="custom_subject" required placeholder="例如：台積電, 美股大盤, 比特幣">
+            <label for="custom_subject">您想追蹤的新聞主題（多主題請用逗號隔開,中文和英文新聞主題都可以）：</label>
+            <input type="text" id="custom_subject" required placeholder="例如：台積電, World cup, BLACKPINK">
             
-            <label for="deliveryHour">每日派送時間 (UTC 調整時區)：</label>
+            <label for="deliveryHour">每日派送時間 (UTC/台灣時區)：</label>
             <select id="deliveryHour">
-                <option value="0">上午 00:00 (UTC) / 台北 08:00 AM</option>
-                <option value="2">上午 02:00 (UTC) / 台北 10:00 AM</option>
-                <option value="4">上午 04:00 (UTC) / 台北 12:00 PM</option>
-                <option value="6">上午 06:00 (UTC) / 台北 02:00 PM</option>
-                <option value="8" selected>上午 08:00 (UTC) / 台北 04:00 PM - 預設</option>
-                <option value="10">上午 10:00 (UTC) / 台北 06:00 PM</option>
-                <option value="12">下午 12:00 (UTC) / 台北 08:00 PM</option>
-                <option value="14">下午 02:00 (UTC) / 台北 10:00 PM</option>
-                <option value="16">下午 04:00 (UTC) / 台北 12:00 AM</option>
-                <option value="18">下午 06:00 (UTC) / 台北 02:00 AM</option>
-                <option value="20">下午 08:00 (UTC) / 台北 04:00 AM</option>
-                <option value="22">下午 10:00 (UTC) / 台北 06:00 AM</option>
+                <option value="0">上午 00:00 (UTC) / 台灣 08:00 AM</option>
+                <option value="2">上午 02:00 (UTC) / 台灣 10:00 AM</option>
+                <option value="4">上午 04:00 (UTC) / 台灣 12:00 PM</option>
+                <option value="6">上午 06:00 (UTC) / 台灣 02:00 PM</option>
+                <option value="8" selected>上午 08:00 (UTC) / 台灣 04:00 PM - 預設</option>
+                <option value="10">上午 10:00 (UTC) / 台灣 06:00 PM</option>
+                <option value="12">下午 12:00 (UTC) / 台灣 08:00 PM</option>
+                <option value="14">下午 02:00 (UTC) / 台灣 10:00 PM</option>
+                <option value="16">下午 04:00 (UTC) / 台灣 12:00 AM</option>
+                <option value="18">下午 06:00 (UTC) / 台灣 02:00 AM</option>
+                <option value="20">下午 08:00 (UTC) / 台灣 04:00 AM</option>
+                <option value="22">下午 10:00 (UTC) / 台灣 06:00 AM</option>
             </select>
             
             <button type="submit">啟用情報派送</button>
