@@ -134,11 +134,13 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
     return f"<p>System skipped execution segment for '{user_topic}' due to high API demand congestion. Please retry shortly.</p>"
 
 def generate_market_sidebar_html():
-    """使用免費的 yfinance 抓取即時大宗商品與美元指數，完全不消耗 Gemini 的呼叫額度。"""
+    """
+    使用 yfinance 抓取即時行情與過去 6 個月的歷史收盤趨勢數據，
+    並使用 QuickChart.io API 自動產出可嵌入郵件的動態折線圖，完全不消耗 Gemini 額度。
+    """
     import yfinance as yf
+    import json
     
-    # 定義要抓取的金融資產 Ticker
-    # CL=F (WTI原油), ZS=F (黃豆黃), GC=F (黃金), DX-Y.NYB (美元指數)
     tickers = {
         "原油價格": "CL=F",
         "黃豆價格": "ZS=F",
@@ -147,32 +149,38 @@ def generate_market_sidebar_html():
     }
     
     sidebar_html = ""
+    chart_datasets = []
+    months_labels = []
+    
+    # 🎨 為每條折線配置雅致的企業圖表色彩
+    colors = {
+        "原油價格": "#f59e0b",  # 琥珀金
+        "黃豆價格": "#84cc16",  # 草原綠
+        "黃金價格": "#eab308",  # 亮金黃
+        "美元指數": "#3b82f6"   # 科技藍
+    }
     
     try:
-        # 一次性抓取所有即時數據
+        # 1. 循環抓取即時報價與歷史走勢數據
         for name, ticker in tickers.items():
             asset = yf.Ticker(ticker)
-            # 獲取最新一筆交易價格
-            todays_data = asset.history(period="1d")
             
+            # --- 抓取即時當日報價 ---
+            todays_data = asset.history(period="1d")
             if not todays_data.empty:
-                # 取得最後一個關帳價/現價
                 current_price = todays_data['Close'].iloc[-1]
-                
-                # 格式化輸出單位
                 if name == "原油價格":
                     price_str = f"${current_price:.2f} / 桶"
                 elif name == "黃豆價格":
-                    # 黃豆在期貨是以美分計價，除以 100 換算成美元/英斗
                     price_str = f"${(current_price/100):.2f} / 英斗"
                 elif name == "黃金價格":
                     price_str = f"${current_price:.2f} / 盎司"
-                else:  # 美元指數
+                else:
                     price_str = f"{current_price:.2f} pts"
             else:
                 price_str = "暫無即時報價"
                 
-            # 拼裝與原先一模一樣的網頁樣式
+            # 拼接即時行情文字面板
             sidebar_html += f"""
             <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
                 <div style="font-size:12px; color:#64748b; font-weight:600;">{name}</div>
@@ -180,25 +188,78 @@ def generate_market_sidebar_html():
                 <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Yahoo Finance 即時數據</div>
             </div>
             """
+            
+            # --- 抓取 6 個月歷史趨勢數據 (按月採樣 '1mo') ---
+            history_6m = asset.history(period="6mo", interval="1mo")
+            if not history_6m.empty:
+                # 僅提取收盤價數據，並進行基底歸一化或標準尺度百分比轉換，以防四大數據（2000點 vs 70點）放同張圖會變形扁平
+                # 這裡使用 6 個月前的初始價格作為 100% 基準線計算「相對漲跌百分比趨勢」
+                initial_price = history_6m['Close'].iloc[0]
+                pct_trend = [round(((p - initial_price) / initial_price) * 100, 1) for p in history_6m['Close']]
+                
+                # 採集時間軸標籤 (格式化為 MM月)
+                if not months_labels:
+                    months_labels = [d.strftime('%m月') for d in history_6m.index]
+                
+                # 組裝 QuickChart dataset 線條屬性
+                chart_datasets.append({
+                    "label": name,
+                    "data": pct_trend,
+                    "borderColor": colors[name],
+                    "backgroundColor": "transparent",
+                    "fill": False,
+                    "borderWidth": 2,
+                    "pointRadius": 3
+                })
+
+        # 2. 當資料成功取得，使用 Chart.js 配置語法構造 QuickChart 圖像端點網址
+        if chart_datasets:
+            chart_config = {
+                "type": "line",
+                "data": {
+                    "labels": months_labels,
+                    "datasets": chart_datasets
+                },
+                "options": {
+                    "title": {
+                        "display": True,
+                        "text": "近6個月宏觀資產相對漲跌幅趨勢 (%)",
+                        "fontSize": 12,
+                        "fontColor": "#334155"
+                    },
+                    "legend": {
+                        "position": "bottom",
+                        "labels": {"fontSize": 10, "boxWidth": 12}
+                    },
+                    "scales": {
+                        "yAxes": [{
+                            "ticks": {
+                                "fontSize": 9,
+                                "callback": "function(value){return value + '%';}"
+                            },
+                            "gridLines": {"color": "#f1f5f9"}
+                        }],
+                        "xAxes": [{"ticks": {"fontSize": 9}, "gridLines": {"display": False}}]
+                    }
+                }
+            }
+            
+            # 將 Python 字典轉換成 JSON 字符串並進行 URL 編碼
+            encoded_config = requests.utils.quote(json.dumps(chart_config))
+            chart_url = f"https://quickchart.io/chart?c={encoded_config}&width=240&height=180"
+            
+            # 將生成的圖表嵌入至即時行情面板的最下方
+            sidebar_html += f"""
+            <div style="background:#ffffff; padding:10px; margin-top:15px; border-radius:6px; border:1px solid #e2e8f0; text-align:center;">
+                <img src="{chart_url}" width="100%" style="max-width:240px; display:block; margin:0 auto; height:auto;" alt="六個月宏觀趨勢圖表" />
+            </div>
+            """
+            
         return sidebar_html
         
     except Exception as e:
-        print(f"❌ Yahoo Finance 擷取異常: {e}")
-        # 萬一 yfinance 在伺服器端被擋，提供一個優雅的備用靜態數據，不讓整封信爛掉
-        return """
-        <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
-            <div style="font-size:12px; color:#64748b; font-weight:600;">原油價格</div><div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">$78.50</div>
-        </div>
-        <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
-            <div style="font-size:12px; color:#64748b; font-weight:600;">黃豆價格</div><div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">$11.60</div>
-        </div>
-        <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
-            <div style="font-size:12px; color:#64748b; font-weight:600;">黃金價格</div><div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">$2320.40</div>
-        </div>
-        <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
-            <div style="font-size:12px; color:#64748b; font-weight:600;">美元指數</div><div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">105.20 pts</div>
-        </div>
-        """
+        print(f"❌ 圖表引擎生成失敗: {e}")
+        return sidebar_html  # 降級保護：若發生異常，依然返回純即時數據面板，不讓整封信件因報錯而中斷。
 
 def compile_master_email_body(user_email, topics_list):
     """Loops through every topic independently to guarantee a 3-news breakdown per subject with a market dashboard sidebar."""
