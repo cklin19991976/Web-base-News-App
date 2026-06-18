@@ -192,8 +192,7 @@ def generate_market_sidebar_html():
             # --- 抓取 6 個月歷史趨勢數據 (按月採樣 '1mo') ---
             history_6m = asset.history(period="6mo", interval="1mo")
             if not history_6m.empty:
-                # 僅提取收盤價數據，並進行基底歸一化或標準尺度百分比轉換，以防四大數據（2000點 vs 70點）放同張圖會變形扁平
-                # 這裡使用 6 個月前的初始價格作為 100% 基準線計算「相對漲跌百分比趨勢」
+                # 這裡使用 6 個月前的初始價格作為基準線，計算「相對漲跌百分比趨勢」
                 initial_price = history_6m['Close'].iloc[0]
                 pct_trend = [round(((p - initial_price) / initial_price) * 100, 1) for p in history_6m['Close']]
                 
@@ -212,7 +211,7 @@ def generate_market_sidebar_html():
                     "pointRadius": 3
                 })
 
-        # 2. 當資料成功取得，使用 Chart.js 配置語法構造 QuickChart 圖像端點網址
+        # 2. 當資料成功取得，建構符合 Chart.js 的純 JSON 配置網址（移除了 JavaScript 回呼函式）
         if chart_datasets:
             chart_config = {
                 "type": "line",
@@ -234,17 +233,22 @@ def generate_market_sidebar_html():
                     "scales": {
                         "yAxes": [{
                             "ticks": {
-                                "fontSize": 9,
-                                "callback": "function(value){return value + '%';}"
+                                "fontSize": 9
                             },
                             "gridLines": {"color": "#f1f5f9"}
                         }],
                         "xAxes": [{"ticks": {"fontSize": 9}, "gridLines": {"display": False}}]
+                    },
+                    "plugins": {
+                        # 🛠️ 改用純文字宣告的外掛：自動在 Y 軸數值後方補上 % 符號，不寫任何匿名函式
+                        "tickFormat": {
+                            "suffix": "%"
+                        }
                     }
                 }
             }
             
-            # 將 Python 字典轉換成 JSON 字符串並進行 URL 編碼
+            # 將 Python 字典轉換成 JSON 字符串並進行 URL 安全編碼
             encoded_config = requests.utils.quote(json.dumps(chart_config))
             chart_url = f"https://quickchart.io/chart?c={encoded_config}&width=240&height=180"
             
@@ -259,7 +263,7 @@ def generate_market_sidebar_html():
         
     except Exception as e:
         print(f"❌ 圖表引擎生成失敗: {e}")
-        return sidebar_html  # 降級保護：若發生異常，依然返回純即時數據面板，不讓整封信件因報錯而中斷。
+        return sidebar_html
 
 def compile_master_email_body(user_email, topics_list):
     """Loops through every topic independently to guarantee a 3-news breakdown per subject with a market dashboard sidebar."""
