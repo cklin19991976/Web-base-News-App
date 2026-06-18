@@ -159,8 +159,9 @@ def generate_market_sidebar_html():
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
+            # ✅ NEW CORRECT SDK DECLARATION:
             config=types.GenerateContentConfig(
-                google_search_retrieval=types.GoogleSearchRetrieval(),
+                tools=[{"google_search_retrieval": {}}], # Correctly registers search grounding tool
                 thinking_config=types.ThinkingConfig(thinking_budget=0)
             )
         )
