@@ -92,8 +92,8 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
     Your absolute mandate is to isolate EXACTLY the top 3 most important, high-impact news stories from the last 24 hours regarding this specific topic: "{user_topic}". 
 
     Generate a clean HTML fragment with NO outer body or html tags:
-    <div style="margin-bottom: 35px; background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
-        <h3 style="margin:0 0 15px 0; font-size:16px; color:#1e40af; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #eff6ff; padding-bottom: 5px;">
+    <div style="margin-bottom: 25px; background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <h3 style="margin:0 0 12px 0; font-size:15px; color:#1e40af; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #eff6ff; padding-bottom: 5px;">
             📊 Monitoring Target: {user_topic}
         </h3>
         <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
@@ -133,8 +133,43 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
     # If all retries failed
     return f"<p>System skipped execution segment for '{user_topic}' due to high API demand congestion. Please retry shortly.</p>"
 
+def generate_market_sidebar_html():
+    """Asks Gemini to gather current global commodity prices and dollar metrics via search grounding tools."""
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    
+    prompt = """
+    Identify the absolute latest live market asset pricing data metrics for:
+    1. Crude Oil Price (原油價格 - WTI or Brent per barrel)
+    2. Soybean Price (黃豆價格)
+    3. Gold Price (黃金價格)
+    4. US Dollar Index (美元指數 - DXY)
+
+    Generate a clean HTML layout snippet that acts as a financial sidebar tracker widget. 
+    Use the following exact html structure template to style each asset panel layout:
+    
+    <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
+        <div style="font-size:12px; color:#64748b; font-weight:600;">[Asset Name in Chinese (e.g. 原油價格)]</div>
+        <div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">[Current Value/Price with standard units like $ or pts]</div>
+        <div style="font-size:11px; color:#94a3b8; margin-top:2px;">即時市場行情數據</div>
+    </div>
+
+    Return only the clean inner HTML widget block code layouts. Do not use markdown fence lines.
+    """
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                google_search_retrieval=types.GoogleSearchRetrieval(),
+                thinking_config=types.ThinkingConfig(thinking_budget=0)
+            )
+        )
+        return response.text
+    except Exception as e:
+        return f"<p style='font-size:12px; color:#dc2626;'>無法載入即時金融行情: {e}</p>"
+
 def compile_master_email_body(user_email, topics_list):
-    """Loops through every topic independently to guarantee a 3-news breakdown per subject."""
+    """Loops through every topic independently to guarantee a 3-news breakdown per subject with a market dashboard sidebar."""
     sections_html = ""
     
     for topic in topics_list:
@@ -145,18 +180,38 @@ def compile_master_email_body(user_email, topics_list):
         # Keep an underlying rhythm safety spacing
         time.sleep(1.0)
         
+    print("📈 Fetching global macro commodities tracking telemetry matrix...")
+    market_sidebar_html = generate_market_sidebar_html()
+        
     master_wrapper = f"""
-    <div style="background-color:#f8fafc; padding:30px 15px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; max-width:650px; margin:0 auto; border-radius:12px;">
-        <div style="border-bottom:2px solid #e2e8f0; padding-bottom:15px; margin-bottom:25px;">
-            <h1 style="margin:0; font-size:22px; color:#0f172a; font-weight:800;">🌟 Your Multi-Subject Matrix Briefing</h1>
-            <p style="margin:5px 0 0 0; font-size:13px; color:#64748b;">Custom tailored streams for: {user_email}</p>
-        </div>
-        
-        {sections_html}
-        
-        <div style="text-align: center; margin-top: 20px; font-size: 11px; color: #94a3b8;">
-            Automated intelligence network node engine. To modify your subjects, re-submit the core web configuration portal form.
-        </div>
+    <div style="background-color:#f1f5f9; padding:25px 10px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b;">
+        <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:750px; background-color:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; border-collapse:collapse;">
+            <tr>
+                <td colspan="2" style="padding:25px 20px; border-bottom:2px solid #f1f5f9; background:#ffffff;">
+                    <h1 style="margin:0; font-size:22px; color:#0f172a; font-weight:800;">🌟 Your Multi-Subject Matrix Briefing</h1>
+                    <p style="margin:5px 0 0 0; font-size:13px; color:#64748b;">Custom tailored streams for: {user_email}</p>
+                </td>
+            </tr>
+            <tr valign="top">
+                <!-- LEFT COLUMN: NEWS TRACKING PANELS (65% WIDTH) -->
+                <td width="65%" style="padding:20px 15px 20px 20px;">
+                    {sections_html}
+                </td>
+                
+                <!-- RIGHT COLUMN: COMMODITIES SIDEBAR WIDGET (35% WIDTH) -->
+                <td width="35%" style="padding:20px 20px 20px 15px; background-color:#f8fafc; border-left:1px solid #e2e8f0;">
+                    <h4 style="margin:0 0 15px 0; font-size:13px; color:#475569; text-transform:uppercase; letter-spacing:0.05em; border-bottom:2px solid #cbd5e1; padding-bottom:5px;">
+                        📈 全球商品與金融數據
+                    </h4>
+                    {market_sidebar_html}
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; padding: 20px; font-size: 11px; color: #94a3b8; background-color:#f8fafc; border-top:1px solid #e2e8f0;">
+                    Automated intelligence network node engine. To modify your subjects, re-submit the core web configuration portal form.
+                </td>
+            </tr>
+        </table>
     </div>
     """
     return master_wrapper
@@ -206,7 +261,7 @@ HTML_PAGE_TEMPLATE = """
 <body>
     <div class="card">
         <h2>🛰️ 每日新聞搜尋引擎</h2>
-        <p style="color: #64748b; font-size: 13px; margin-top:-10px;">請輸入多個您感興趣的新聞主題（以逗號隔開），系統每日將針對每個主題利用人工智慧選出3條最重要的新聞,發送至您的信箱。</p>
+        <p style="color: #64748b; font-size: 13px; margin-top:-10px;">請輸入多個您感興趣的新聞主題（以逗號隔開），系統每日將針對每個主題利用人工智慧選出3條最重要的新聞，並附帶即時大宗商品與金融指數發送至您的信箱。</p>
         
         <form id="configForm">
             <label for="email">您的電子郵件地址：</label>
@@ -311,7 +366,7 @@ def secret_test_trigger():
                 resend.Emails.send({
                     "from": "IntelBrief <briefing@newshighlights.online>", # Adjust to your custom domain!
                     "to": [user.email],
-                    "subject": f"🔥 MULTI-SECTION TEST: {len(topics)} Subjects Isolated",
+                    "subject": f"🔥 MULTI-SECTION TEST: {len(topics)} Subjects + Real-Time Sidebar",
                     "html": final_email_html
                 })
         return jsonify({"status": "success", "message": "Multi-subject instant delivery engine complete!"}), 200
