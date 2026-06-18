@@ -136,10 +136,11 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
 def generate_market_sidebar_html():
     """
     使用 yfinance 抓取即時行情與過去 6 個月的歷史收盤趨勢數據，
-    並使用 QuickChart.io API 自動產出可嵌入郵件的動態折線圖，完全不消耗 Gemini 額度。
+    並使用標準 urllib.parse 進行安全網址編碼，生成 QuickChart.io 折線圖。
     """
     import yfinance as yf
     import json
+    from urllib.parse import quote  # 🛠️ 導入標準網址編碼庫，徹底解決編碼衝突
     
     tickers = {
         "原油價格": "CL=F",
@@ -192,15 +193,12 @@ def generate_market_sidebar_html():
             # --- 抓取 6 個月歷史趨勢數據 (按月採樣 '1mo') ---
             history_6m = asset.history(period="6mo", interval="1mo")
             if not history_6m.empty:
-                # 這裡使用 6 個月前的初始價格作為基準線，計算「相對漲跌百分比趨勢」
                 initial_price = history_6m['Close'].iloc[0]
                 pct_trend = [round(((p - initial_price) / initial_price) * 100, 1) for p in history_6m['Close']]
                 
-                # 採集時間軸標籤 (格式化為 MM月)
                 if not months_labels:
                     months_labels = [d.strftime('%m月') for d in history_6m.index]
                 
-                # 組裝 QuickChart dataset 線條屬性
                 chart_datasets.append({
                     "label": name,
                     "data": pct_trend,
@@ -211,7 +209,7 @@ def generate_market_sidebar_html():
                     "pointRadius": 3
                 })
 
-        # 2. 當資料成功取得，建構符合 Chart.js 的純 JSON 配置網址（移除了 JavaScript 回呼函式）
+        # 2. 當資料成功取得，建構純淨的 Chart.js 配置（移除易引起誤判的外掛，改為純淨設定）
         if chart_datasets:
             chart_config = {
                 "type": "line",
@@ -222,7 +220,7 @@ def generate_market_sidebar_html():
                 "options": {
                     "title": {
                         "display": True,
-                        "text": "近6個月宏觀資產相對漲跌幅趨勢 (%)",
+                        "text": "近6個月資產漲跌幅趨勢(%)",
                         "fontSize": 12,
                         "fontColor": "#334155"
                     },
@@ -232,24 +230,16 @@ def generate_market_sidebar_html():
                     },
                     "scales": {
                         "yAxes": [{
-                            "ticks": {
-                                "fontSize": 9
-                            },
+                            "ticks": {"fontSize": 9},
                             "gridLines": {"color": "#f1f5f9"}
                         }],
                         "xAxes": [{"ticks": {"fontSize": 9}, "gridLines": {"display": False}}]
-                    },
-                    "plugins": {
-                        # 🛠️ 改用純文字宣告的外掛：自動在 Y 軸數值後方補上 % 符號，不寫任何匿名函式
-                        "tickFormat": {
-                            "suffix": "%"
-                        }
                     }
                 }
             }
             
-            # 將 Python 字典轉換成 JSON 字符串並進行 URL 安全編碼
-            encoded_config = requests.utils.quote(json.dumps(chart_config))
+            # 🛠️ 使用標準的 urllib.parse.quote 進行百分之百安全的網址編碼
+            encoded_config = quote(json.dumps(chart_config))
             chart_url = f"https://quickchart.io/chart?c={encoded_config}&width=240&height=180"
             
             # 將生成的圖表嵌入至即時行情面板的最下方
