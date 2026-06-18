@@ -231,7 +231,7 @@ def compile_master_email_body(user_email, topics_list):
             <tr>
                 <td style="padding:20px 15px; border-bottom:1px solid #f1f5f9; background:#ffffff;">
                     <h1 style="margin:0; font-size:20px; color:#0f172a; font-weight:800;">🌟 每日新聞簡報</h1>
-                    <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">每日新聞簡報：{user_email}</p>
+                    <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">客戶：{user_email}</p>
                 </td>
             </tr>
             
@@ -279,7 +279,7 @@ def run_hourly_newsletter_batch():
                 resend.Emails.send({
                     "from": "IntelBrief <briefing@newshighlights.online>", # Make sure this matches your verified domain!
                     "to": [user.email],
-                    "subject": f"🌟 Strategic Briefing Matrix: {len(topics)} Tracked Subjects",
+                    "subject": f"🌟 每日新聞 Briefing: {len(topics)} Tracked Subjects",
                     "html": final_email_html
                 })
                 print(f"✅ Multi-section report safely sent to {user.email}")
