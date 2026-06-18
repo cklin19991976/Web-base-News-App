@@ -135,16 +135,12 @@ def generate_single_subject_section_html(user_topic, raw_news_payload):
 
 def generate_market_sidebar_html():
     """
-    使用 yfinance 抓取即時行情與過去 6 個月的歷史收盤趨勢數據。
-    特別加上快取停用設定，徹底解決多執行緒環境下的 SQLite 驅動報錯衝突。
+    直接使用 requests 呼叫 Yahoo Finance 公開 API 抓取最新價格，
+    完全不生成圖表，不引用 yfinance，杜絕所有超時與快取衝突。
     """
-    import yfinance as yf
-    import json
-    from urllib.parse import quote
+    import requests
     
-    # 🛠️ 核心修復：強制 yfinance 不要使用任何底層 SQLite 快取會話（Session）
-    # 這樣它就會純粹走標準的網路請求，完全避開執行緒間讀寫 SQLite 快取的 Bug
-    yf.set_tz_cache(False) 
+    base_url = "https://query1.finance.yahoo.com/v8/finance/chart/"
     
     tickers = {
         "原油價格": "CL=F",
@@ -154,109 +150,59 @@ def generate_market_sidebar_html():
     }
     
     sidebar_html = ""
-    chart_datasets = []
-    months_labels = []
-    
-    # 🎨 為每條折線配置雅致的企業圖表色彩
-    colors = {
-        "原油價格": "#f59e0b",  # 琥珀金
-        "黃豆價格": "#84cc16",  # 草原綠
-        "黃金價格": "#eab308",  # 亮金黃
-        "美元指數": "#3b82f6"   # 科技藍
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
     
     try:
-        # 1. 循環抓取即時報價與歷史走勢數據
         for name, ticker in tickers.items():
-            # 🛠️ 修復：傳入一個乾淨、未被快取污染的 Ticker 物件
-            asset = yf.Ticker(ticker)
+            # 🎯 只抓取最新 1 天的數據（period=1d），速度極快
+            api_url = f"{base_url}{ticker}?period=1d&interval=1m"
+            response = requests.get(api_url, headers=headers, timeout=5)
             
-            # --- 抓取即時當日報價 ---
-            todays_data = asset.history(period="1d")
-            if not todays_data.empty:
-                current_price = todays_data['Close'].iloc[-1]
-                if name == "原油價格":
-                    price_str = f"${current_price:.2f} / 桶"
-                elif name == "黃豆價格":
-                    price_str = f"${(current_price/100):.2f} / 英斗"
-                elif name == "黃金價格":
-                    price_str = f"${current_price:.2f} / 盎司"
-                else:
-                    price_str = f"{current_price:.2f} pts"
-            else:
-                price_str = "暫無即時報價"
+            if response.status_code == 200:
+                data = response.json()
+                result = data.get("chart", {}).get("result", [None])[0]
                 
-            # 拼接即時行情文字面板
+                if result:
+                    meta = result.get("meta", {})
+                    current_price = meta.get("regularMarketPrice")
+                    
+                    # 如果 meta 裡沒有拿到即時價格，就退回指標列表拿最後一個數字
+                    if current_price is None:
+                        quote_data = result.get("indicators", {}).get("quote", [{}])[0]
+                        close_prices = [p for p in quote_data.get("close", []) if p is not None]
+                        current_price = close_prices[-1] if close_prices else None
+
+                    if current_price is not None:
+                        if name == "原油價格":
+                            price_str = f"${current_price:.2f} / 桶"
+                        elif name == "黃豆價格":
+                            price_str = f"${(current_price/100):.2f} / 英斗"
+                        elif name == "黃金價格":
+                            price_str = f"${current_price:.2f} / 盎司"
+                        else:
+                            price_str = f"{current_price:.2f} pts"
+                    else:
+                        price_str = "暫無報價"
+                else:
+                    price_str = "解析異常"
+            else:
+                price_str = "連線失敗"
+                
+            # 拼接乾淨的純文字行情面板
             sidebar_html += f"""
             <div style="background:#ffffff; padding:12px; margin-bottom:12px; border-radius:6px; border:1px solid #e2e8f0;">
                 <div style="font-size:12px; color:#64748b; font-weight:600;">{name}</div>
                 <div style="font-size:18px; color:#0f172a; font-weight:700; margin-top:2px;">{price_str}</div>
-                <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Yahoo Finance 即時數據</div>
-            </div>
-            """
-            
-            # --- 抓取 6 個月歷史趨勢數據 (按月採樣 '1mo') ---
-            history_6m = asset.history(period="6mo", interval="1mo")
-            if not history_6m.empty:
-                initial_price = history_6m['Close'].iloc[0]
-                pct_trend = [round(((p - initial_price) / initial_price) * 100, 1) for p in history_6m['Close']]
-                
-                if not months_labels:
-                    months_labels = [d.strftime('%m月') for d in history_6m.index]
-                
-                chart_datasets.append({
-                    "label": name,
-                    "data": pct_trend,
-                    "borderColor": colors[name],
-                    "backgroundColor": "transparent",
-                    "fill": False,
-                    "borderWidth": 2,
-                    "pointRadius": 3
-                })
-
-        # 2. 當資料成功取得，建構純淨的 Chart.js 配置
-        if chart_datasets:
-            chart_config = {
-                "type": "line",
-                "data": {
-                    "labels": months_labels,
-                    "datasets": chart_datasets
-                },
-                "options": {
-                    "title": {
-                        "display": True,
-                        "text": "近6個月資產漲跌幅趨勢(%)",
-                        "fontSize": 12,
-                        "fontColor": "#334155"
-                    },
-                    "legend": {
-                        "position": "bottom",
-                        "labels": {"fontSize": 10, "boxWidth": 12}
-                    },
-                    "scales": {
-                        "yAxes": [{
-                            "ticks": {"fontSize": 9},
-                            "gridLines": {"color": "#f1f5f9"}
-                        }],
-                        "xAxes": [{"ticks": {"fontSize": 9}, "gridLines": {"display": False}}]
-                    }
-                }
-            }
-            
-            encoded_config = quote(json.dumps(chart_config))
-            chart_url = f"https://quickchart.io/chart?c={encoded_config}&width=240&height=180"
-            
-            # 將生成的圖表嵌入至即時行情面板的最下方
-            sidebar_html += f"""
-            <div style="background:#ffffff; padding:10px; margin-top:15px; border-radius:6px; border:1px solid #e2e8f0; text-align:center;">
-                <img src="{chart_url}" width="100%" style="max-width:240px; display:block; margin:0 auto; height:auto;" alt="六個月宏觀趨勢圖表" />
+                <div style="font-size:11px; color:#94a3b8; margin-top:2px;">市場即時數據</div>
             </div>
             """
             
         return sidebar_html
         
     except Exception as e:
-        print(f"❌ 圖表引擎生成失敗: {e}")
+        print(f"❌ 行情數據獲取失敗: {e}")
         return sidebar_html
 
 def compile_master_email_body(user_email, topics_list):
