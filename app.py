@@ -323,7 +323,7 @@ HTML_PAGE_TEMPLATE = """
 <body>
     <div class="card">
         <h2>🛰️ 每日新聞搜尋引擎</h2>
-        <p style="color: #64748b; font-size: 13px; margin-top:-10px;">請輸入多個您感興趣的新聞主題（以逗號隔開），系統每日將針對每個主題利用人工智慧選出3條最重要的新聞，並附帶即時大宗商品與金融指數發送至您的信箱。</p>
+        <p style="color: #64748b; font-size: 13px; margin-top:-10px;">請輸入多個您感興趣的新聞主題（以逗號隔開），系統每日將針對每個主題利用人工智慧選出重要的新聞，發送至您的信箱。</p>
         
         <form id="configForm">
             <label for="email">您的電子郵件地址：</label>
